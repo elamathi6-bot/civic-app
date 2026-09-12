@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Report a Civic Issue</title>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 480px; margin: 40px auto; padding: 0 16px; background:#f5f6f8; }
+  h1 { font-size: 22px; }
+  label { display:block; margin-top:16px; font-weight:bold; font-size:14px; }
+  input, textarea { width:100%; padding:10px; margin-top:6px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; }
+  button { margin-top:20px; width:100%; padding:12px; background:#2563eb; color:white; border:none; border-radius:6px; font-size:16px; cursor:pointer; }
+  button:disabled { background:#93c5fd; }
+  #status { margin-top:16px; font-size:14px; }
+  #locStatus { font-size:12px; color:#555; margin-top:4px; }
+</style>
+</head>
+<body>
+  <h1>Report a Civic Issue</h1>
+
+  <label>Your User ID (from registering via the API)</label>
+  <input type="number" id="userId" placeholder="e.g. 1" />
+
+  <label>Photo of the issue</label>
+  <input type="file" id="photo" accept="image/*" capture="environment" />
+
+  <label>Description</label>
+  <textarea id="description" rows="3" placeholder="e.g. Large pothole near the bus stop"></textarea>
+
+  <div id="locStatus">Location: not captured yet</div>
+  <button id="locBtn" type="button">Get My Location</button>
+
+  <button id="submitBtn" type="button" disabled>Submit Report</button>
+  <div id="status"></div>
+
+<script>
+  const API_URL = "http://localhost:8000"; // change if your backend runs elsewhere
+
+  let lat = null, lng = null;
+
+  document.getElementById("locBtn").onclick = () => {
+    if (!navigator.geolocation) {
+      document.getElementById("locStatus").textContent = "Geolocation not supported by this browser.";
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        lat = pos.coords.latitude;
+        lng = pos.coords.longitude;
+        document.getElementById("locStatus").textContent = `Location: ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+        document.getElementById("submitBtn").disabled = false;
+      },
+      (err) => {
+        document.getElementById("locStatus").textContent = "Could not get location: " + err.message;
+      }
+    );
+  };
+
+  document.getElementById("submitBtn").onclick = async () => {
+    const userId = document.getElementById("userId").value;
+    const photo = document.getElementById("photo").files[0];
+    const description = document.getElementById("description").value;
+    const statusEl = document.getElementById("status");
+
+    if (!userId || !photo || lat === null) {
+      statusEl.textContent = "Please fill user ID, choose a photo, and get your location.";
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("user_id", userId);
+    formData.append("description", description);
+    formData.append("latitude", lat);
+    formData.append("longitude", lng);
+    formData.append("photo", photo);
+
+    statusEl.textContent = "Submitting...";
+    try {
+      const res = await fetch(`${API_URL}/complaints`, { method: "POST", body: formData });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Submit failed");
+      statusEl.textContent = `Submitted! Detected category: ${data.detected_category} (complaint #${data.complaint_id})`;
+    } catch (e) {
+      statusEl.textContent = "Error: " + e.message;
+    }
+  };
+</script>
+</body>
+</html>

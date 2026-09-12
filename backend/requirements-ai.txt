@@ -1,0 +1,9 @@
+# Install this file ONLY when you're ready to train/use the real YOLO model
+# (i.e. after the core app in requirements.txt is already working).
+#
+#   pip install -r requirements-ai.txt
+#
+# Left unpinned on purpose so pip grabs whatever versions already have
+# pre-built installers for your Python version.
+numpy
+ultralytics

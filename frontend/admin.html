@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Admin Dashboard - Civic Issues</title>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 900px; margin: 30px auto; padding: 0 16px; background:#f5f6f8; }
+  h1 { font-size: 22px; }
+  table { width:100%; border-collapse: collapse; margin-top: 16px; background:white; }
+  th, td { border: 1px solid #ddd; padding: 8px; font-size: 13px; text-align:left; }
+  th { background:#2563eb; color:white; }
+  img { max-width: 80px; border-radius: 4px; }
+  select { padding: 4px; }
+  .pending { color:#b45309; font-weight:bold; }
+  .in_progress { color:#1d4ed8; font-weight:bold; }
+  .resolved { color:#15803d; font-weight:bold; }
+</style>
+</head>
+<body>
+  <h1>Admin Dashboard</h1>
+  <button onclick="loadComplaints()">Refresh</button>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th><th>Photo</th><th>Category</th><th>Description</th>
+        <th>Reported By</th><th>Department</th><th>Location</th><th>Status</th>
+      </tr>
+    </thead>
+    <tbody id="tableBody"></tbody>
+  </table>
+
+<script>
+  const API_URL = "http://localhost:8000";
+
+  async function loadComplaints() {
+    const res = await fetch(`${API_URL}/complaints`);
+    const data = await res.json();
+    const body = document.getElementById("tableBody");
+    body.innerHTML = "";
+
+    data.forEach((c) => {
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td>${c.id}</td>
+        <td><img src="${API_URL}/uploads/${c.image_path}" onerror="this.style.display='none'" /></td>
+        <td>${c.category ?? "-"}</td>
+        <td>${c.description ?? ""}</td>
+        <td>${c.reported_by}</td>
+        <td>${c.department ?? "Unassigned"}</td>
+        <td>${c.latitude}, ${c.longitude}</td>
+        <td>
+          <select onchange="updateStatus(${c.id}, this.value)">
+            <option value="pending" ${c.status === "pending" ? "selected" : ""}>Pending</option>
+            <option value="in_progress" ${c.status === "in_progress" ? "selected" : ""}>In Progress</option>
+            <option value="resolved" ${c.status === "resolved" ? "selected" : ""}>Resolved</option>
+          </select>
+        </td>
+      `;
+      body.appendChild(row);
+    });
+  }
+
+  async function updateStatus(id, status) {
+    const formData = new FormData();
+    formData.append("status", status);
+    await fetch(`${API_URL}/complaints/${id}/status`, { method: "PUT", body: formData });
+  }
+
+  loadComplaints();
+</script>
+</body>
+</html>
