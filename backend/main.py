@@ -26,6 +26,31 @@ UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
+# Categories considered higher-risk by default, regardless of description
+HIGH_RISK_CATEGORIES = {"open_manhole", "fallen_tree", "water_leak", "manhole"}
+LOW_RISK_CATEGORIES = {"garbage", "streetlight"}
+
+# Words in the citizen's description that bump priority up
+URGENT_KEYWORDS = [
+    "urgent", "dangerous", "emergency", "danger", "accident",
+    "blocking", "blocked road", "electrocut", "collapse", "injur",
+]
+
+
+def calculate_priority(category: str, description: str) -> str:
+    """Simple rule-based priority: category baseline, then bumped by keywords."""
+    category = (category or "").lower()
+    description = (description or "").lower()
+
+    if any(word in description for word in URGENT_KEYWORDS):
+        return "high"
+
+    if category in HIGH_RISK_CATEGORIES:
+        return "high"
+    if category in LOW_RISK_CATEGORIES:
+        return "low"
+    return "medium"
+
 
 def distance_meters(lat1, lon1, lat2, lon2):
     """Great-circle distance between two lat/long points, in meters."""
@@ -102,6 +127,7 @@ def submit_complaint(
     # 2. Run AI detection on it
     result = detect_issue(filepath)
     category = result["category"]
+    confidence = result.get("confidence", 0.0)
 
     # 3. Match category to a department
     conn = get_connection()
@@ -110,7 +136,10 @@ def submit_complaint(
     dept = cur.fetchone()
     department_id = dept["id"] if dept else None
 
-    # 4. Check for likely duplicates: same category, still open, nearby, recent
+    # 4. Calculate priority
+    priority = calculate_priority(category, description)
+
+    # 5. Check for likely duplicates: same category, still open, nearby, recent
     cur.execute(
         """SELECT id, latitude, longitude FROM complaints
            WHERE category = %s AND status IN ('pending', 'in_progress')
@@ -124,13 +153,15 @@ def submit_complaint(
             possible_duplicate_of = row["id"]
             break
 
-    # 5. Save complaint to database
+    # 6. Save complaint to database
     cur.execute(
         """INSERT INTO complaints
-           (user_id, department_id, category, description, image_path, latitude, longitude, possible_duplicate_of)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+           (user_id, department_id, category, description, image_path, latitude, longitude,
+            possible_duplicate_of, priority, confidence)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
            RETURNING id""",
-        (user_id, department_id, category, description, filename, latitude, longitude, possible_duplicate_of),
+        (user_id, department_id, category, description, filename, latitude, longitude,
+         possible_duplicate_of, priority, confidence),
     )
     complaint_id = cur.fetchone()["id"]
     conn.commit()
@@ -143,6 +174,8 @@ def submit_complaint(
         "detected_category": category,
         "ai_mode": result.get("mode"),
         "possible_duplicate_of": possible_duplicate_of,
+        "confidence": confidence,
+        "priority": priority,
     }
 
 
@@ -152,7 +185,8 @@ def list_complaints(status: str = None, category: str = None):
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     query = """SELECT c.id, c.user_id, c.description, c.category, c.status, c.latitude, c.longitude,
-                      c.image_path, c.created_at, c.possible_duplicate_of, u.name AS reported_by, d.name AS department
+                      c.image_path, c.created_at, c.possible_duplicate_of, c.priority, c.confidence,
+                      u.name AS reported_by, d.name AS department
                FROM complaints c
                JOIN users u ON c.user_id = u.id
                LEFT JOIN departments d ON c.department_id = d.id

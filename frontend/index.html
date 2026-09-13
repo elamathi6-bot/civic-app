@@ -1,88 +1,844 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<title>Report a Civic Issue</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Civic Report</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-  body { font-family: Arial, sans-serif; max-width: 480px; margin: 40px auto; padding: 0 16px; background:#f5f6f8; }
-  h1 { font-size: 22px; }
-  label { display:block; margin-top:16px; font-weight:bold; font-size:14px; }
-  input, textarea { width:100%; padding:10px; margin-top:6px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; }
-  button { margin-top:20px; width:100%; padding:12px; background:#2563eb; color:white; border:none; border-radius:6px; font-size:16px; cursor:pointer; }
-  button:disabled { background:#93c5fd; }
-  #status { margin-top:16px; font-size:14px; }
-  #locStatus { font-size:12px; color:#555; margin-top:4px; }
+  :root {
+    --bg: #F3F4F1;
+    --surface: #FFFFFF;
+    --ink: #14181B;
+    --muted: #6B7280;
+    --faint: #9CA3AF;
+    --teal: #0F766E;
+    --teal-soft: #E6F3F1;
+    --coral: #FF6B4A;
+    --coral-deep: #E5502F;
+    --border: #E9EAE6;
+    --error: #DC2626;
+    --error-soft: #FDECEC;
+    --amber: #D97706;
+    --amber-soft: #FEF3E2;
+    --green: #059669;
+    --green-soft: #E7F6F0;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    background-image: radial-gradient(circle at 15% 8%, #DCEEEA 0%, transparent 40%),
+                       radial-gradient(circle at 90% 85%, #FFE4DA 0%, transparent 38%);
+    font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+    color: var(--ink);
+    display: flex;
+    justify-content: center;
+    padding: 40px 16px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .phone {
+    width: 100%;
+    max-width: 420px;
+    background: var(--surface);
+    border-radius: 32px;
+    box-shadow: 0 1px 2px rgba(20,24,27,0.04), 0 20px 60px -12px rgba(20,24,27,0.18);
+    overflow: hidden;
+    border: 1px solid rgba(20,24,27,0.05);
+    min-height: 640px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .status-bar { height: 14px; background: var(--ink); flex-shrink: 0; }
+
+  .topbar {
+    padding: 22px 24px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  .brand { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 15px; }
+
+  .brand .icon {
+    width: 28px; height: 28px; border-radius: 9px;
+    background: var(--teal);
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  .brand .icon svg { width: 15px; height: 15px; }
+
+  .conn { font-size: 11px; font-weight: 600; color: var(--faint); display: flex; align-items: center; gap: 5px; }
+  .conn .led { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
+  .conn.ok { color: var(--teal); }
+  .conn.ok .led { background: var(--teal); }
+  .conn.bad { color: var(--error); }
+  .conn.bad .led { background: var(--error); }
+
+  .user-chip {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; font-weight: 600; color: var(--muted);
+  }
+
+  .user-chip .avatar {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--teal-soft); color: var(--teal);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 800;
+  }
+
+  .logout-link {
+    font-size: 11px; color: var(--faint); text-decoration: underline;
+    cursor: pointer; background: none; border: none; font-family: inherit; padding: 0;
+  }
+
+  .content { padding: 20px 24px 28px; flex: 1; display: flex; flex-direction: column; }
+
+  h1 { font-size: 26px; font-weight: 800; line-height: 1.15; margin: 6px 0 6px; letter-spacing: -0.01em; }
+  .sub { font-size: 14px; color: var(--muted); line-height: 1.5; margin: 0 0 22px; }
+  .section-label { font-size: 13px; font-weight: 700; margin: 0 0 10px; color: var(--ink); }
+
+  .badge-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 24px; }
+  .badge { background: var(--teal-soft); color: var(--teal); font-size: 11px; font-weight: 700; padding: 6px 10px; border-radius: 8px; }
+
+  .drop {
+    border: 2px dashed #D6D9D3; border-radius: 18px; padding: 22px 16px;
+    text-align: center; cursor: pointer; background: #FAFBF9; margin-bottom: 18px;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+
+  .drop.drag, .drop:hover { border-color: var(--teal); background: var(--teal-soft); }
+
+  .drop .up-icon {
+    width: 38px; height: 38px; background: var(--surface); border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+
+  .drop p { margin: 0; font-size: 13px; color: var(--muted); font-weight: 500; }
+  .drop .fname { color: var(--ink); font-weight: 700; }
+
+  .preview { margin-top: 12px; display: none; }
+  .preview img { width: 100%; max-height: 160px; object-fit: cover; border-radius: 14px; }
+
+  .field { margin-bottom: 16px; }
+  .field label { display: block; font-size: 12.5px; font-weight: 700; margin-bottom: 7px; }
+  .field .opt { font-weight: 500; color: var(--faint); }
+
+  input, textarea {
+    width: 100%; border: 1.5px solid var(--border); border-radius: 12px;
+    padding: 12px 14px; font-family: inherit; font-size: 14px; color: var(--ink); background: var(--surface);
+  }
+
+  input:focus, textarea:focus { outline: none; border-color: var(--teal); }
+  textarea { resize: vertical; min-height: 60px; }
+
+  .loc-row { display: flex; gap: 8px; }
+  .loc-row input { flex: 1; min-width: 0; }
+
+  .loc-btn {
+    background: var(--ink); color: white; border: none; border-radius: 12px;
+    padding: 0 14px; font-size: 12.5px; font-weight: 700; cursor: pointer;
+    white-space: nowrap; display: flex; align-items: center; gap: 5px;
+  }
+
+  .loc-btn:hover { background: #2A2F33; }
+
+  .error-box {
+    background: var(--error-soft); color: var(--error); border-radius: 12px;
+    padding: 11px 14px; font-size: 13px; font-weight: 500; margin-bottom: 16px; display: none;
+  }
+
+  .primary-btn {
+    width: 100%; background: var(--coral); color: white; border: none;
+    border-radius: 999px; padding: 16px; font-size: 15px; font-weight: 700;
+    font-family: inherit; cursor: pointer;
+    box-shadow: 0 8px 20px -6px rgba(255,107,74,0.55);
+    transition: background 0.15s ease, transform 0.1s ease;
+  }
+
+  .primary-btn:hover { background: var(--coral-deep); }
+  .primary-btn:active { transform: scale(0.98); }
+  .primary-btn:disabled { background: var(--faint); box-shadow: none; cursor: not-allowed; }
+
+  .link-toggle {
+    text-align: center; font-size: 13px; color: var(--muted); margin-top: 18px;
+  }
+
+  .link-toggle button {
+    background: none; border: none; color: var(--teal); font-weight: 700;
+    font-family: inherit; font-size: 13px; cursor: pointer; padding: 0;
+  }
+
+  /* Success */
+  .success { display: none; text-align: center; padding: 30px 6px 10px; flex: 1; }
+
+  .success .check {
+    width: 68px; height: 68px; border-radius: 50%; background: var(--teal-soft);
+    display: flex; align-items: center; justify-content: center; margin: 0 auto 18px;
+  }
+
+  .success .check svg { width: 32px; height: 32px; }
+  .success h2 { font-size: 19px; font-weight: 800; margin: 0 0 6px; }
+
+  .success .detected-pill {
+    display: inline-flex; align-items: center; gap: 6px; background: var(--ink); color: white;
+    border-radius: 999px; padding: 8px 18px; font-weight: 700; font-size: 14px; margin: 12px 0 6px;
+  }
+
+  .success .meta { font-size: 12.5px; color: var(--faint); margin-bottom: 18px; }
+  .success p.note { font-size: 13px; color: var(--muted); max-width: 30ch; margin: 0 auto 22px; line-height: 1.5; }
+
+  .again-btn {
+    background: var(--teal-soft); color: var(--teal); border: none; border-radius: 999px;
+    padding: 12px 24px; font-weight: 700; font-size: 13.5px; font-family: inherit; cursor: pointer;
+  }
+
+  .again-btn:hover { background: #D8EEEA; }
+
+  /* Nav tabs (report screen only) */
+  .tabs { display: flex; gap: 8px; margin-bottom: 20px; }
+  .tab {
+    flex: 1; text-align: center; padding: 9px; border-radius: 999px;
+    font-size: 12.5px; font-weight: 700; cursor: pointer; background: var(--teal-soft); color: var(--teal);
+  }
+  .tab.active { background: var(--ink); color: white; }
+
+  /* My reports list */
+  .reports-list { display: none; flex-direction: column; gap: 10px; flex: 1; overflow-y: auto; }
+  .report-card { border: 1.5px solid var(--border); border-radius: 14px; padding: 12px 14px; }
+  .report-card .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+  .report-card .cat { font-weight: 700; font-size: 13.5px; }
+  .report-card .date { font-size: 11px; color: var(--faint); }
+  .report-card .desc { font-size: 12.5px; color: var(--muted); margin-bottom: 8px; }
+  .status-pill { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 4px 10px; border-radius: 999px; }
+  .status-pill.pending { background: var(--amber-soft); color: var(--amber); }
+  .status-pill.in_progress { background: var(--teal-soft); color: var(--teal); }
+  .status-pill.resolved { background: var(--green-soft); color: var(--green); }
+  .empty-state { text-align: center; color: var(--faint); font-size: 13px; padding: 40px 10px; }
+
+  .footnote {
+    text-align: center; font-size: 11.5px; color: var(--faint); max-width: 420px;
+    margin: 16px auto 0; line-height: 1.5; padding: 0 12px;
+  }
+
+  /* Admin dashboard */
+  .role-badge {
+    font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em;
+    background: var(--ink); color: white; padding: 2px 7px; border-radius: 6px; margin-left: 6px;
+  }
+  .filter-row { display: flex; gap: 8px; margin-bottom: 16px; }
+  .filter-row select {
+    flex: 1; border: 1.5px solid var(--border); border-radius: 12px;
+    padding: 10px 12px; font-family: inherit; font-size: 12.5px; font-weight: 600;
+    color: var(--ink); background: var(--surface);
+  }
+  .filter-row select:focus { outline: none; border-color: var(--teal); }
+  .admin-list { display: flex; flex-direction: column; gap: 10px; flex: 1; overflow-y: auto; }
+  .admin-card { border: 1.5px solid var(--border); border-radius: 14px; padding: 12px 14px; }
+  .admin-card .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+  .admin-card .cat { font-weight: 700; font-size: 13.5px; }
+  .admin-card .date { font-size: 11px; color: var(--faint); }
+  .admin-card .desc { font-size: 12.5px; color: var(--muted); margin-bottom: 6px; }
+  .admin-card .by { font-size: 11px; color: var(--faint); margin-bottom: 10px; }
+  .admin-card .bottom-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .admin-card .status-select {
+    border: 1.5px solid var(--border); border-radius: 999px; padding: 5px 10px;
+    font-family: inherit; font-size: 11px; font-weight: 700; background: var(--surface); color: var(--ink);
+  }
+  .admin-card .status-select:focus { outline: none; border-color: var(--teal); }
+  .admin-card .category-select {
+    border: 1.5px solid var(--border); border-radius: 999px; padding: 5px 10px;
+    font-family: inherit; font-size: 11px; font-weight: 700; background: var(--surface); color: var(--muted);
+  }
+  .admin-card .category-select:focus { outline: none; border-color: var(--teal); }
+  .admin-card .selects { display: flex; gap: 6px; }
+  .admin-card .priority-badge {
+    font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em;
+    border-radius: 6px; padding: 3px 7px; margin-left: 6px;
+  }
+  .admin-card .priority-badge.high { background: #FEE2E2; color: #B91C1C; }
+  .admin-card .priority-badge.medium { background: #FEF3C7; color: #92400E; }
+  .admin-card .priority-badge.low { background: #E0F2F1; color: #0F766E; }
+  .admin-card .dup-flag {
+    font-size: 11px; font-weight: 700; color: var(--amber); background: var(--amber-soft);
+    border-radius: 8px; padding: 5px 9px; margin-bottom: 10px; display: inline-block;
+  }
 </style>
 </head>
 <body>
-  <h1>Report a Civic Issue</h1>
+<div>
+  <div class="phone">
+    <div class="status-bar"></div>
+    <div class="topbar">
+      <div class="brand"><div class="icon"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2L3 7v6c0 5 4 9 9 9s9-4 9-9V7l-9-5z" fill="white"/></svg></div>Civic Report</div>
+      <div id="topbarRight">
+        <div class="conn" id="conn"><span class="led"></span><span id="connText">checking</span></div>
+      </div>
+    </div>
 
-  <label>Your User ID (from registering via the API)</label>
-  <input type="number" id="userId" placeholder="e.g. 1" />
+    <div class="content">
 
-  <label>Photo of the issue</label>
-  <input type="file" id="photo" accept="image/*" capture="environment" />
+      <!-- AUTH STATE -->
+      <div id="authState">
+        <h1 id="authHeadline">Welcome<br>back</h1>
+        <p class="sub" id="authSub">Log in to report and track civic issues.</p>
 
-  <label>Description</label>
-  <textarea id="description" rows="3" placeholder="e.g. Large pothole near the bus stop"></textarea>
+        <div class="error-box" id="authError"></div>
 
-  <div id="locStatus">Location: not captured yet</div>
-  <button id="locBtn" type="button">Get My Location</button>
+        <form id="authForm">
+          <div class="field" id="nameField" style="display:none">
+            <label>Name</label>
+            <input type="text" id="authName" placeholder="Your name">
+          </div>
+          <div class="field">
+            <label>Email</label>
+            <input type="email" id="authEmail" placeholder="you@example.com">
+          </div>
+          <div class="field">
+            <label>Password</label>
+            <input type="password" id="authPassword" placeholder="********">
+          </div>
+          <button type="submit" class="primary-btn" id="authSubmitBtn">Log In</button>
+        </form>
 
-  <button id="submitBtn" type="button" disabled>Submit Report</button>
-  <div id="status"></div>
+        <div class="link-toggle">
+          <span id="toggleText">Don't have an account?</span>
+          <button id="toggleModeBtn">Sign up</button>
+        </div>
+      </div>
+
+      <!-- REPORT STATE -->
+      <div id="appState" style="display:none; flex-direction:column;">
+        <div class="tabs">
+          <div class="tab active" id="tabReport">New Report</div>
+          <div class="tab" id="tabHistory">My Reports</div>
+        </div>
+
+        <!-- New report form -->
+        <div id="reportPanel">
+          <h1>What's the<br>problem?</h1>
+          <p class="sub">Snap a photo and we'll figure out the category for you.</p>
+
+          <div class="badge-row">
+            <span class="badge">Pothole</span><span class="badge">Damaged Road</span><span class="badge">Manhole</span>
+            <span class="badge">Garbage</span><span class="badge">Streetlight</span><span class="badge">Water Leak</span>
+            <span class="badge">Fallen Tree</span>
+          </div>
+
+          <div class="error-box" id="reportError"></div>
+
+          <p class="section-label">Photo</p>
+          <div class="drop" id="dropZone">
+            <div class="up-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#0F766E" stroke-width="2"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg></div>
+            <p id="dropText">Tap to upload a photo</p>
+            <input type="file" id="photoInput" accept="image/*" style="display:none">
+          </div>
+          <div class="preview" id="preview"><img id="previewImg" alt="Selected photo preview"></div>
+
+          <form id="reportForm">
+            <div class="field">
+              <label>Description <span class="opt">optional</span></label>
+              <textarea id="description" placeholder="Anything we should know?"></textarea>
+            </div>
+            <div class="field">
+              <label>Location</label>
+              <div class="loc-row">
+                <input type="text" id="latitude" placeholder="Latitude" inputmode="decimal">
+                <input type="text" id="longitude" placeholder="Longitude" inputmode="decimal">
+                <button type="button" class="loc-btn" id="locBtn">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="white"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>GPS
+                </button>
+              </div>
+            </div>
+            <button type="submit" class="primary-btn" id="submitBtn">Submit Report</button>
+          </form>
+        </div>
+
+        <!-- My reports list -->
+        <div class="reports-list" id="reportsPanel">
+          <div class="empty-state" id="reportsEmpty">Loading your reports...</div>
+        </div>
+      </div>
+
+      <!-- ADMIN STATE -->
+      <div id="adminState" style="display:none; flex-direction:column; flex:1;">
+        <h1>All reports</h1>
+        <p class="sub">Review and update the status of citizen reports.</p>
+
+        <div class="filter-row">
+          <select id="filterStatus">
+            <option value="">All statuses</option>
+            <option value="pending">Pending</option>
+            <option value="in_progress">In Progress</option>
+            <option value="resolved">Resolved</option>
+          </select>
+          <select id="filterCategory">
+            <option value="">All categories</option>
+            <option value="pothole">Pothole</option>
+            <option value="damaged_road">Damaged Road</option>
+            <option value="manhole">Manhole</option>
+            <option value="garbage">Garbage</option>
+            <option value="streetlight">Streetlight</option>
+            <option value="water_leak">Water Leak</option>
+            <option value="fallen_tree">Fallen Tree</option>
+            <option value="needs_review">Needs Review</option>
+          </select>
+        </div>
+
+        <div class="admin-list" id="adminList">
+          <div class="empty-state">Loading reports...</div>
+        </div>
+      </div>
+
+      <!-- SUCCESS STATE -->
+      <div class="success" id="successState">
+        <div class="check"><svg viewBox="0 0 24 24" fill="none" stroke="#0F766E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></div>
+        <h2>Report submitted</h2>
+        <div class="detected-pill" id="resultCategory">-</div>
+        <div class="meta" id="resultMeta"></div>
+        <p class="note">Detection helps route your report faster, but everything is reviewed by a person too.</p>
+        <button class="again-btn" id="againBtn">Back to reports</button>
+      </div>
+
+    </div>
+  </div>
+
+  <p class="footnote">Prototype system. Pothole, water leakage and garbage detection are most reliable; fallen-tree detection is limited by a small training set for now.</p>
+</div>
 
 <script>
-  const API_URL = "http://localhost:8000"; // change if your backend runs elsewhere
+  const API_BASE = 'https://civic-app-omdk.onrender.com';
+  let currentUser = JSON.parse(localStorage.getItem('civic_user') || 'null');
+  let isSignupMode = false;
 
-  let lat = null, lng = null;
+  const connEl = document.getElementById('conn');
+  const connText = document.getElementById('connText');
 
-  document.getElementById("locBtn").onclick = () => {
-    if (!navigator.geolocation) {
-      document.getElementById("locStatus").textContent = "Geolocation not supported by this browser.";
-      return;
+  function checkConnection() {
+    fetch(API_BASE + '/').then(r => {
+      connEl.classList.remove('ok', 'bad');
+      connEl.classList.add(r.ok ? 'ok' : 'bad');
+      connText.textContent = r.ok ? 'connected' : 'offline';
+    }).catch(() => {
+      connEl.classList.remove('ok', 'bad');
+      connEl.classList.add('bad');
+      connText.textContent = 'offline';
+    });
+  }
+
+  checkConnection();
+  setInterval(checkConnection, 15000);
+
+  function showAuth() {
+    document.getElementById('authState').style.display = 'block';
+    document.getElementById('appState').style.display = 'none';
+    document.getElementById('successState').style.display = 'none';
+  }
+
+  function showApp() {
+    document.getElementById('authState').style.display = 'none';
+    document.getElementById('successState').style.display = 'none';
+    renderUserChip();
+    if (currentUser.is_admin) {
+      document.getElementById('appState').style.display = 'none';
+      document.getElementById('adminState').style.display = 'flex';
+      loadAdminComplaints();
+    } else {
+      document.getElementById('adminState').style.display = 'none';
+      document.getElementById('appState').style.display = 'flex';
+      showTab('report');
     }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        lat = pos.coords.latitude;
-        lng = pos.coords.longitude;
-        document.getElementById("locStatus").textContent = `Location: ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-        document.getElementById("submitBtn").disabled = false;
-      },
-      (err) => {
-        document.getElementById("locStatus").textContent = "Could not get location: " + err.message;
-      }
-    );
-  };
+  }
 
-  document.getElementById("submitBtn").onclick = async () => {
-    const userId = document.getElementById("userId").value;
-    const photo = document.getElementById("photo").files[0];
-    const description = document.getElementById("description").value;
-    const statusEl = document.getElementById("status");
+  function renderUserChip() {
+    const initials = currentUser.name ? currentUser.name.trim().charAt(0).toUpperCase() : '?';
+    document.getElementById('topbarRight').innerHTML =
+      '<div class="user-chip"><div class="avatar">' + initials + '</div>' +
+      (currentUser.name || 'You') +
+      (currentUser.is_admin ? '<span class="role-badge">Admin</span>' : '') +
+      '<button class="logout-link" id="logoutBtn">Log out</button></div>';
+    document.getElementById('logoutBtn').addEventListener('click', () => {
+      localStorage.removeItem('civic_user');
+      currentUser = null;
+      showAuth();
+    });
+  }
 
-    if (!userId || !photo || lat === null) {
-      statusEl.textContent = "Please fill user ID, choose a photo, and get your location.";
-      return;
-    }
+  document.getElementById('filterStatus').addEventListener('change', loadAdminComplaints);
+  document.getElementById('filterCategory').addEventListener('change', loadAdminComplaints);
 
-    const formData = new FormData();
-    formData.append("user_id", userId);
-    formData.append("description", description);
-    formData.append("latitude", lat);
-    formData.append("longitude", lng);
-    formData.append("photo", photo);
+  async function loadAdminComplaints() {
+    const list = document.getElementById('adminList');
+    list.innerHTML = '<div class="empty-state">Loading reports...</div>';
+    const status = document.getElementById('filterStatus').value;
+    const category = document.getElementById('filterCategory').value;
+    const params = new URLSearchParams();
+    if (status) params.append('status', status);
+    if (category) params.append('category', category);
 
-    statusEl.textContent = "Submitting...";
     try {
-      const res = await fetch(`${API_URL}/complaints`, { method: "POST", body: formData });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Submit failed");
-      statusEl.textContent = `Submitted! Detected category: ${data.detected_category} (complaint #${data.complaint_id})`;
-    } catch (e) {
-      statusEl.textContent = "Error: " + e.message;
+      const res = await fetch(API_BASE + '/complaints?' + params.toString());
+      const rows = await res.json();
+      if (!rows.length) {
+        list.innerHTML = '<div class="empty-state">No reports match this filter.</div>';
+        return;
+      }
+      const priorityOrder = { high: 0, medium: 1, low: 2 };
+      rows.sort((a, b) => (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1));
+      list.innerHTML = '';
+      rows.forEach(r => list.appendChild(renderAdminCard(r)));
+    } catch (err) {
+      list.innerHTML = '<div class="empty-state">Could not load reports. Is the backend running?</div>';
     }
-  };
+  }
+
+  const CATEGORY_OPTIONS = ['pothole', 'damaged_road', 'manhole', 'garbage', 'streetlight', 'water_leak', 'fallen_tree', 'needs_review'];
+
+  function renderAdminCard(r) {
+    const card = document.createElement('div');
+    card.className = 'admin-card';
+    const currentStatus = (r.status || 'pending').toLowerCase();
+    const currentCategory = (r.category || 'needs_review').toLowerCase();
+    const date = r.created_at ? new Date(r.created_at).toLocaleDateString(undefined, { day: '2-digit', month: 'short' }) : '';
+    const optionsList = CATEGORY_OPTIONS.includes(currentCategory) ? CATEGORY_OPTIONS : [currentCategory, ...CATEGORY_OPTIONS];
+    const categoryOptionsHtml = optionsList.map(c =>
+      '<option value="' + c + '"' + (c === currentCategory ? ' selected' : '') + '>' + formatLabel(c) + '</option>'
+    ).join('');
+    card.innerHTML =
+      '<div class="top"><span class="cat">' + formatLabel(r.category || 'Needs Review') +
+      '<span class="priority-badge ' + (r.priority || 'medium') + '">' + (r.priority || 'medium') + '</span></span>' +
+      '<span class="date">' + date + '</span></div>' +
+      '<div class="desc">' + (r.description ? r.description : 'No description added') + '</div>' +
+      '<div class="by">Reported by ' + (r.reported_by || 'Unknown') +
+      (r.department ? ' &middot; ' + r.department : '') + '</div>' +
+      (r.possible_duplicate_of ? '<span class="dup-flag">Possible duplicate of #' + r.possible_duplicate_of + '</span>' : '') +
+      '<div class="bottom-row">' +
+      '<span class="status-pill ' + currentStatus + '">' + formatLabel(currentStatus) + '</span>' +
+      '<div class="selects">' +
+      '<select class="category-select" data-id="' + r.id + '">' + categoryOptionsHtml + '</select>' +
+      '<select class="status-select" data-id="' + r.id + '">' +
+      '<option value="pending"' + (currentStatus === 'pending' ? ' selected' : '') + '>Pending</option>' +
+      '<option value="in_progress"' + (currentStatus === 'in_progress' ? ' selected' : '') + '>In Progress</option>' +
+      '<option value="resolved"' + (currentStatus === 'resolved' ? ' selected' : '') + '>Resolved</option>' +
+      '</select></div></div>';
+
+    card.querySelector('.status-select').addEventListener('change', async e => {
+      const newStatus = e.target.value;
+      const id = e.target.dataset.id;
+      e.target.disabled = true;
+      try {
+        const fd = new FormData();
+        fd.append('status', newStatus);
+        const res = await fetch(API_BASE + '/complaints/' + id + '/status', { method: 'PUT', body: fd });
+        if (!res.ok) throw new Error('Update failed');
+        loadAdminComplaints();
+      } catch (err) {
+        alert('Could not update status. Try again.');
+        e.target.disabled = false;
+      }
+    });
+
+    card.querySelector('.category-select').addEventListener('change', async e => {
+      const newCategory = e.target.value;
+      const id = e.target.dataset.id;
+      e.target.disabled = true;
+      try {
+        const fd = new FormData();
+        fd.append('category', newCategory);
+        const res = await fetch(API_BASE + '/complaints/' + id + '/category', { method: 'PUT', body: fd });
+        if (!res.ok) throw new Error('Update failed');
+        loadAdminComplaints();
+      } catch (err) {
+        alert('Could not update category. Try again.');
+        e.target.disabled = false;
+      }
+    });
+
+    return card;
+  }
+
+  if (currentUser) { showApp(); } else { showAuth(); }
+
+  const toggleModeBtn = document.getElementById('toggleModeBtn');
+  toggleModeBtn.addEventListener('click', () => {
+    isSignupMode = !isSignupMode;
+    document.getElementById('nameField').style.display = isSignupMode ? 'block' : 'none';
+    document.getElementById('authHeadline').innerHTML = isSignupMode ? 'Create your<br>account' : 'Welcome<br>back';
+    document.getElementById('authSub').textContent = isSignupMode ? 'Sign up to start reporting issues.' : 'Log in to report and track civic issues.';
+    document.getElementById('authSubmitBtn').textContent = isSignupMode ? 'Sign Up' : 'Log In';
+    document.getElementById('toggleText').textContent = isSignupMode ? 'Already have an account?' : "Don't have an account?";
+    toggleModeBtn.textContent = isSignupMode ? 'Log in' : 'Sign up';
+    document.getElementById('authError').style.display = 'none';
+  });
+
+  document.getElementById('authForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const errorBox = document.getElementById('authError');
+    errorBox.style.display = 'none';
+
+    const email = document.getElementById('authEmail').value.trim();
+    const password = document.getElementById('authPassword').value;
+    const name = document.getElementById('authName').value.trim();
+
+    if (!email || !password) { return showAuthError('Enter your email and password.'); }
+    if (isSignupMode && !name) { return showAuthError('Enter your name.'); }
+
+    const btn = document.getElementById('authSubmitBtn');
+    btn.disabled = true;
+    btn.textContent = isSignupMode ? 'Signing up...' : 'Logging in...';
+
+    try {
+      if (isSignupMode) {
+        const fd = new FormData();
+        fd.append('name', name);
+        fd.append('email', email);
+        fd.append('password', password);
+        const res = await fetch(API_BASE + '/register', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Could not sign up.');
+
+        const fd2 = new FormData();
+        fd2.append('email', email);
+        fd2.append('password', password);
+        const res2 = await fetch(API_BASE + '/login', { method: 'POST', body: fd2 });
+        const data2 = await res2.json();
+        if (!res2.ok) throw new Error(data2.detail || 'Signed up, but could not log in automatically.');
+        currentUser = { id: data2.user_id, name: data2.name, is_admin: !!data2.is_admin };
+      } else {
+        const fd = new FormData();
+        fd.append('email', email);
+        fd.append('password', password);
+        const res = await fetch(API_BASE + '/login', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Invalid email or password.');
+        currentUser = { id: data.user_id, name: data.name, is_admin: !!data.is_admin };
+      }
+      localStorage.setItem('civic_user', JSON.stringify(currentUser));
+      showApp();
+    } catch (err) {
+      if (err instanceof TypeError) {
+        showAuthError('Can\'t reach the server. Make sure the backend is running.');
+      } else {
+        showAuthError(err.message || 'Something went wrong.');
+      }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = isSignupMode ? 'Sign Up' : 'Log In';
+    }
+  });
+
+  function showAuthError(msg) {
+    const box = document.getElementById('authError');
+    box.textContent = msg;
+    box.style.display = 'block';
+  }
+
+  document.getElementById('tabReport').addEventListener('click', () => showTab('report'));
+  document.getElementById('tabHistory').addEventListener('click', () => showTab('history'));
+
+  function showTab(tab) {
+    document.getElementById('tabReport').classList.toggle('active', tab === 'report');
+    document.getElementById('tabHistory').classList.toggle('active', tab === 'history');
+    document.getElementById('reportPanel').style.display = tab === 'report' ? 'block' : 'none';
+    document.getElementById('reportsPanel').style.display = tab === 'history' ? 'flex' : 'none';
+    if (tab === 'history') loadMyReports();
+  }
+
+  async function loadMyReports() {
+    const panel = document.getElementById('reportsPanel');
+    panel.innerHTML = '<div class="empty-state">Loading your reports...</div>';
+    try {
+      const res = await fetch(API_BASE + '/complaints');
+      const rows = await res.json();
+      const mine = rows.filter(r => r.user_id === currentUser.id);
+      if (!mine.length) {
+        panel.innerHTML = '<div class="empty-state">No reports yet. Submit one from the New Report tab.</div>';
+        return;
+      }
+      panel.innerHTML = '';
+      mine.forEach(r => {
+        const card = document.createElement('div');
+        card.className = 'report-card';
+        const statusClass = (r.status || 'pending').toLowerCase();
+        const date = r.created_at ? new Date(r.created_at).toLocaleDateString(undefined, { day: '2-digit', month: 'short' }) : '';
+        card.innerHTML =
+          '<div class="top"><span class="cat">' + formatLabel(r.category || 'Unknown') + '</span>' +
+          '<span class="date">' + date + '</span></div>' +
+          '<div class="desc">' + (r.description ? r.description : 'No description added') + '</div>' +
+          '<span class="status-pill ' + statusClass + '">' + formatLabel(r.status || 'pending') + '</span>';
+        panel.appendChild(card);
+      });
+    } catch (err) {
+      panel.innerHTML = '<div class="empty-state">Could not load your reports. Is the backend running?</div>';
+    }
+  }
+
+  const dropZone = document.getElementById('dropZone');
+  const photoInput = document.getElementById('photoInput');
+  const dropText = document.getElementById('dropText');
+  const preview = document.getElementById('preview');
+  const previewImg = document.getElementById('previewImg');
+
+  dropZone.addEventListener('click', () => photoInput.click());
+  photoInput.addEventListener('change', () => { if (photoInput.files[0]) showFile(photoInput.files[0]); });
+
+  ['dragover', 'dragleave', 'drop'].forEach(evt => {
+    dropZone.addEventListener(evt, e => {
+      e.preventDefault();
+      dropZone.classList.toggle('drag', evt === 'dragover');
+    });
+  });
+
+  dropZone.addEventListener('drop', e => {
+    const file = e.dataTransfer.files[0];
+    if (file) { photoInput.files = e.dataTransfer.files; showFile(file); }
+  });
+
+  function showFile(file) {
+    dropText.innerHTML = 'Selected: <span class="fname">' + file.name + '</span>';
+    const reader = new FileReader();
+    reader.onload = e => { previewImg.src = e.target.result; preview.style.display = 'block'; };
+    reader.readAsDataURL(file);
+  }
+
+  document.getElementById('locBtn').addEventListener('click', () => {
+    if (!navigator.geolocation) { alert('Location not supported in this browser.'); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        document.getElementById('latitude').value = pos.coords.latitude.toFixed(6);
+        document.getElementById('longitude').value = pos.coords.longitude.toFixed(6);
+      },
+      () => alert('Could not get your location. Enter it manually.')
+    );
+  });
+
+  const reportForm = document.getElementById('reportForm');
+  const reportError = document.getElementById('reportError');
+  const submitBtn = document.getElementById('submitBtn');
+
+  reportForm.addEventListener('submit', async e => {
+    e.preventDefault();
+    reportError.style.display = 'none';
+
+    const photo = photoInput.files[0];
+    const lat = document.getElementById('latitude').value;
+    const lng = document.getElementById('longitude').value;
+
+    if (!photo) { return showReportError('Add a photo of the issue first.'); }
+    if (!lat || !lng) { return showReportError('Add a location, or tap GPS.'); }
+
+    const latNum = parseFloat(lat);
+    const lngNum = parseFloat(lng);
+    if (isNaN(latNum) || isNaN(lngNum)) {
+      return showReportError('Location must be numbers (e.g. 12.9716, 80.2205).');
+    }
+    if (latNum < -90 || latNum > 90) {
+      return showReportError('Latitude must be between -90 and 90.');
+    }
+    if (lngNum < -180 || lngNum > 180) {
+      return showReportError('Longitude must be between -180 and 180.');
+    }
+
+    const fd = new FormData();
+    fd.append('user_id', currentUser.id);
+    fd.append('description', document.getElementById('description').value || '');
+    fd.append('latitude', lat);
+    fd.append('longitude', lng);
+    fd.append('photo', photo);
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Submitting...';
+
+    try {
+      const res = await fetch(API_BASE + '/complaints', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Server error while submitting.');
+      showSuccess(data);
+    } catch (err) {
+      if (err instanceof TypeError) {
+        showReportError('Can\'t reach the server. Make sure the backend is running.');
+      } else {
+        showReportError(err.message || 'Server error while submitting.');
+      }
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Submit Report';
+    }
+  });
+
+  function showReportError(msg) {
+    reportError.textContent = msg;
+    reportError.style.display = 'block';
+  }
+
+  function showSuccess(data) {
+    document.getElementById('resultCategory').textContent = formatLabel(data.detected_category || 'Logged for review');
+    let meta = 'Report #' + data.complaint_id;
+    if (data.possible_duplicate_of) {
+      meta += ' &middot; similar to report #' + data.possible_duplicate_of;
+    }
+    document.getElementById('resultMeta').innerHTML = meta;
+    document.getElementById('appState').style.display = 'none';
+    document.getElementById('successState').style.display = 'block';
+    renderConfidenceCheck(data);
+  }
+
+  function renderConfidenceCheck(data) {
+    const existing = document.getElementById('confidenceCheck');
+    if (existing) existing.remove();
+
+    const confidence = data.confidence || 0;
+    if (confidence >= 0.5) return; // confident enough, no need to ask
+
+    const box = document.createElement('div');
+    box.id = 'confidenceCheck';
+    box.style.cssText = 'margin-top:14px; padding:12px 14px; border-radius:12px; border:1.5px solid var(--border); text-align:left;';
+    box.innerHTML =
+      '<div style="font-size:12.5px; font-weight:700; margin-bottom:6px;">AI wasn\'t fully sure about this one (' + Math.round(confidence * 100) + '% confidence). Is the category right?</div>' +
+      '<select id="fixCategorySelect" style="width:100%; border:1.5px solid var(--border); border-radius:10px; padding:8px 10px; font-family:inherit; font-size:12.5px; margin-bottom:8px;">' +
+      CATEGORY_OPTIONS.map(c => '<option value="' + c + '"' + (c === data.detected_category ? ' selected' : '') + '>' + formatLabel(c) + '</option>').join('') +
+      '</select>' +
+      '<button id="fixCategoryBtn" style="width:100%; border:none; border-radius:10px; padding:9px; background:var(--ink); color:white; font-family:inherit; font-weight:700; font-size:12.5px;">Confirm category</button>' +
+      '<div id="fixCategoryMsg" style="font-size:11px; color:var(--faint); margin-top:6px;"></div>';
+
+    document.getElementById('successState').insertBefore(box, document.getElementById('againBtn'));
+
+    document.getElementById('fixCategoryBtn').addEventListener('click', async () => {
+      const newCategory = document.getElementById('fixCategorySelect').value;
+      const msg = document.getElementById('fixCategoryMsg');
+      try {
+        const fd = new FormData();
+        fd.append('category', newCategory);
+        const res = await fetch(API_BASE + '/complaints/' + data.complaint_id + '/category', { method: 'PUT', body: fd });
+        if (!res.ok) throw new Error('failed');
+        document.getElementById('resultCategory').textContent = formatLabel(newCategory);
+        msg.textContent = 'Updated, thanks!';
+      } catch (err) {
+        msg.textContent = 'Could not update. Try again.';
+      }
+    });
+  }
+
+  function formatLabel(label) {
+    return String(label).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  }
+
+  document.getElementById('againBtn').addEventListener('click', () => {
+    reportForm.reset();
+    dropText.textContent = 'Tap to upload a photo';
+    preview.style.display = 'none';
+    document.getElementById('successState').style.display = 'none';
+    document.getElementById('appState').style.display = 'flex';
+    showTab('history');
+  });
 </script>
 </body>
 </html>
