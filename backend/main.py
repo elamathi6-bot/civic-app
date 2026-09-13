@@ -185,8 +185,9 @@ def list_complaints(status: str = None, category: str = None):
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     query = """SELECT c.id, c.user_id, c.description, c.category, c.status, c.latitude, c.longitude,
-                      c.image_path, c.created_at, c.possible_duplicate_of, c.priority, c.confidence,
-                      c.citizen_verified, u.name AS reported_by, d.name AS department
+                      c.image_path, c.resolved_image_path, c.created_at, c.possible_duplicate_of,
+                      c.priority, c.confidence, c.citizen_verified,
+                      u.name AS reported_by, d.name AS department
                FROM complaints c
                JOIN users u ON c.user_id = u.id
                LEFT JOIN departments d ON c.department_id = d.id
@@ -269,3 +270,23 @@ def verify_resolution(complaint_id: int, verified: str = Form(...)):
     cur.close()
     conn.close()
     return {"message": "Verification recorded", "verified": is_verified}
+
+
+@app.put("/complaints/{complaint_id}/resolve-photo")
+def upload_resolve_photo(complaint_id: int, photo: UploadFile = File(...)):
+    """Admin uploads an 'after' photo showing the issue was fixed."""
+    filename = f"resolved_{datetime.utcnow().timestamp()}_{photo.filename}"
+    filepath = os.path.join(UPLOAD_DIR, filename)
+    with open(filepath, "wb") as f:
+        shutil.copyfileobj(photo.file, f)
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE complaints SET resolved_image_path = %s WHERE id = %s",
+        (filename, complaint_id),
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"message": "Resolution photo uploaded", "resolved_image_path": filename}
