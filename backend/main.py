@@ -1,5 +1,6 @@
 import os
 import shutil
+import tempfile
 from datetime import datetime
 from math import radians, cos, sin, asin, sqrt
 
@@ -25,6 +26,54 @@ app.add_middleware(
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+# ---------- PHOTO STORAGE (Cloudinary if configured, otherwise local disk) ----------
+
+CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME")
+CLOUDINARY_API_KEY = os.environ.get("CLOUDINARY_API_KEY")
+CLOUDINARY_API_SECRET = os.environ.get("CLOUDINARY_API_SECRET")
+
+USE_CLOUDINARY = bool(CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET)
+
+if USE_CLOUDINARY:
+    import cloudinary
+    import cloudinary.uploader
+
+    cloudinary.config(
+        cloud_name=CLOUDINARY_CLOUD_NAME,
+        api_key=CLOUDINARY_API_KEY,
+        api_secret=CLOUDINARY_API_SECRET,
+        secure=True,
+    )
+
+
+def store_photo_from_path(local_path: str) -> str:
+    """Upload a local file to Cloudinary (if configured) and return its URL,
+    or move it into the local uploads folder and return its filename."""
+    if USE_CLOUDINARY:
+        result = cloudinary.uploader.upload(local_path, folder="civic-app")
+        return result["secure_url"]
+    else:
+        filename = os.path.basename(local_path)
+        dest = os.path.join(UPLOAD_DIR, filename)
+        if local_path != dest:
+            shutil.move(local_path, dest)
+        return filename
+
+
+def store_photo_from_upload(upload: UploadFile, prefix: str = "") -> str:
+    """Upload a FastAPI UploadFile directly to Cloudinary (if configured) and
+    return its URL, or save it to the local uploads folder and return its filename."""
+    filename = f"{prefix}{datetime.utcnow().timestamp()}_{upload.filename}"
+    if USE_CLOUDINARY:
+        result = cloudinary.uploader.upload(upload.file, folder="civic-app")
+        return result["secure_url"]
+    else:
+        filepath = os.path.join(UPLOAD_DIR, filename)
+        with open(filepath, "wb") as f:
+            shutil.copyfileobj(upload.file, f)
+        return filename
+
 
 # Categories considered higher-risk by default, regardless of description
 HIGH_RISK_CATEGORIES = {"open_manhole", "fallen_tree", "water_leak", "manhole"}
@@ -118,28 +167,33 @@ def submit_complaint(
     longitude: float = Form(...),
     photo: UploadFile = File(...),
 ):
-    # 1. Save the uploaded photo
-    filename = f"{datetime.utcnow().timestamp()}_{photo.filename}"
-    filepath = os.path.join(UPLOAD_DIR, filename)
-    with open(filepath, "wb") as f:
-        shutil.copyfileobj(photo.file, f)
+    # 1. Save the uploaded photo to a temp file first (YOLO needs a local path to read)
+    suffix = os.path.splitext(photo.filename or "")[1] or ".jpg"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, dir=UPLOAD_DIR) as tmp:
+        shutil.copyfileobj(photo.file, tmp)
+        tmp_path = tmp.name
 
     # 2. Run AI detection on it
-    result = detect_issue(filepath)
+    result = detect_issue(tmp_path)
     category = result["category"]
     confidence = result.get("confidence", 0.0)
 
-    # 3. Match category to a department
+    # 3. Store the photo permanently (Cloudinary URL, or local filename) and clean up the temp file
+    image_reference = store_photo_from_path(tmp_path)
+    if os.path.exists(tmp_path):
+        os.remove(tmp_path)
+
+    # 4. Match category to a department
     conn = get_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("SELECT id FROM departments WHERE category = %s", (category,))
     dept = cur.fetchone()
     department_id = dept["id"] if dept else None
 
-    # 4. Calculate priority
+    # 5. Calculate priority
     priority = calculate_priority(category, description)
 
-    # 5. Check for likely duplicates: same category, still open, nearby, recent
+    # 6. Check for likely duplicates: same category, still open, nearby, recent
     cur.execute(
         """SELECT id, latitude, longitude FROM complaints
            WHERE category = %s AND status IN ('pending', 'in_progress')
@@ -153,14 +207,14 @@ def submit_complaint(
             possible_duplicate_of = row["id"]
             break
 
-    # 6. Save complaint to database
+    # 7. Save complaint to database
     cur.execute(
         """INSERT INTO complaints
            (user_id, department_id, category, description, image_path, latitude, longitude,
             possible_duplicate_of, priority, confidence)
            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
            RETURNING id""",
-        (user_id, department_id, category, description, filename, latitude, longitude,
+        (user_id, department_id, category, description, image_reference, latitude, longitude,
          possible_duplicate_of, priority, confidence),
     )
     complaint_id = cur.fetchone()["id"]
@@ -275,18 +329,15 @@ def verify_resolution(complaint_id: int, verified: str = Form(...)):
 @app.put("/complaints/{complaint_id}/resolve-photo")
 def upload_resolve_photo(complaint_id: int, photo: UploadFile = File(...)):
     """Admin uploads an 'after' photo showing the issue was fixed."""
-    filename = f"resolved_{datetime.utcnow().timestamp()}_{photo.filename}"
-    filepath = os.path.join(UPLOAD_DIR, filename)
-    with open(filepath, "wb") as f:
-        shutil.copyfileobj(photo.file, f)
+    image_reference = store_photo_from_upload(photo, prefix="resolved_")
 
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
         "UPDATE complaints SET resolved_image_path = %s WHERE id = %s",
-        (filename, complaint_id),
+        (image_reference, complaint_id),
     )
     conn.commit()
     cur.close()
     conn.close()
-    return {"message": "Resolution photo uploaded", "resolved_image_path": filename}
+    return {"message": "Resolution photo uploaded", "resolved_image_path": image_reference}

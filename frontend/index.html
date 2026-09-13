@@ -417,6 +417,12 @@
 <script>
   const API_BASE = 'https://civic-app-omdk.onrender.com';
   const IMAGE_BASE = API_BASE + '/uploads/';
+
+  function photoUrl(reference) {
+    if (!reference) return '';
+    // Cloudinary (or any absolute) URLs are used as-is; old local filenames get the uploads/ prefix
+    return reference.startsWith('http') ? reference : IMAGE_BASE + reference;
+  }
   let currentUser = JSON.parse(localStorage.getItem('civic_user') || 'null');
   let isSignupMode = false;
 
@@ -517,7 +523,7 @@
       '<div class="top"><span class="cat">' + formatLabel(r.category || 'Needs Review') +
       '<span class="priority-badge ' + (r.priority || 'medium') + '">' + (r.priority || 'medium') + '</span></span>' +
       '<span class="date">' + date + '</span></div>' +
-      (r.image_path ? '<img src="' + IMAGE_BASE + r.image_path + '" style="width:100%; max-height:160px; object-fit:cover; border-radius:10px; margin-bottom:8px;" alt="Reported photo">' : '') +
+      (r.image_path ? '<img src="' + photoUrl(r.image_path) + '" style="width:100%; max-height:160px; object-fit:cover; border-radius:10px; margin-bottom:8px;" alt="Reported photo">' : '') +
       '<div class="desc">' + (r.description ? r.description : 'No description added') + '</div>' +
       '<div class="by">Reported by ' + (r.reported_by || 'Unknown') +
       (r.department ? ' &middot; ' + r.department : '') + '</div>' +
@@ -525,7 +531,7 @@
       (r.citizen_verified === false ? '<span class="dup-flag" style="color:#DC2626; background:#FEE2E2;">Reopened \u2014 citizen says not fixed</span>' : '') +
       (r.resolved_image_path ?
         '<div style="margin-top:8px;"><div style="font-size:11px; font-weight:700; color:var(--faint); margin-bottom:4px;">After photo:</div>' +
-        '<img src="' + IMAGE_BASE + r.resolved_image_path + '" style="width:100%; max-height:160px; object-fit:cover; border-radius:10px;" alt="Resolved photo"></div>'
+        '<img src="' + photoUrl(r.resolved_image_path) + '" style="width:100%; max-height:160px; object-fit:cover; border-radius:10px;" alt="Resolved photo"></div>'
         : '<div class="after-photo-upload" style="margin-top:8px;">' +
           '<label style="display:block; font-size:11px; color:var(--faint); margin-bottom:4px; cursor:pointer;">Upload after photo:</label>' +
           '<input type="file" accept="image/*" class="resolve-photo-input" data-id="' + r.id + '" style="font-size:11px;">' +
@@ -700,12 +706,12 @@
         card.innerHTML =
           '<div class="top"><span class="cat">' + formatLabel(r.category || 'Unknown') + '</span>' +
           '<span class="date">' + date + '</span></div>' +
-          (r.image_path ? '<img src="' + IMAGE_BASE + r.image_path + '" style="width:100%; max-height:160px; object-fit:cover; border-radius:10px; margin-bottom:8px;" alt="Your photo">' : '') +
+          (r.image_path ? '<img src="' + photoUrl(r.image_path) + '" style="width:100%; max-height:160px; object-fit:cover; border-radius:10px; margin-bottom:8px;" alt="Your photo">' : '') +
           '<div class="desc">' + (r.description ? r.description : 'No description added') + '</div>' +
           '<span class="status-pill ' + statusClass + '">' + formatLabel(r.status || 'pending') + '</span>' +
           (r.resolved_image_path ?
             '<div style="margin-top:8px;"><div style="font-size:11px; font-weight:700; color:var(--faint); margin-bottom:4px;">After fix:</div>' +
-            '<img src="' + IMAGE_BASE + r.resolved_image_path + '" style="width:100%; max-height:160px; object-fit:cover; border-radius:10px;" alt="Fixed photo"></div>'
+            '<img src="' + photoUrl(r.resolved_image_path) + '" style="width:100%; max-height:160px; object-fit:cover; border-radius:10px;" alt="Fixed photo"></div>'
             : '');
 
         if (statusClass === 'resolved' && r.citizen_verified === null) {
