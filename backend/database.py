@@ -1,15 +1,22 @@
+import os
 import psycopg2
 import psycopg2.extras
 
-# EDIT THESE to match your own PostgreSQL setup
-DB_CONFIG = {
+# Used only when running locally on your laptop (no DATABASE_URL set)
+LOCAL_DB_CONFIG = {
     "host": "localhost",
     "port": 5432,
     "user": "postgres",
-    "password": "admin123",   # <-- put your PostgreSQL password here
-    "dbname": "civic_app"      # <-- create this database first in pgAdmin
+    "password": "admin123",
+    "dbname": "civic_app"
 }
 
 
 def get_connection():
-    return psycopg2.connect(**DB_CONFIG)
+    database_url = os.environ.get("DATABASE_URL")
+    if database_url:
+        # Running on Render (or anywhere DATABASE_URL is set)
+        return psycopg2.connect(database_url)
+    else:
+        # Running locally on your laptop
+        return psycopg2.connect(**LOCAL_DB_CONFIG)
