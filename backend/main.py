@@ -186,7 +186,7 @@ def list_complaints(status: str = None, category: str = None):
 
     query = """SELECT c.id, c.user_id, c.description, c.category, c.status, c.latitude, c.longitude,
                       c.image_path, c.created_at, c.possible_duplicate_of, c.priority, c.confidence,
-                      u.name AS reported_by, d.name AS department
+                      c.citizen_verified, u.name AS reported_by, d.name AS department
                FROM complaints c
                JOIN users u ON c.user_id = u.id
                LEFT JOIN departments d ON c.department_id = d.id
@@ -215,7 +215,12 @@ def update_status(complaint_id: int, status: str = Form(...)):
         raise HTTPException(status_code=400, detail="Invalid status")
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("UPDATE complaints SET status = %s WHERE id = %s", (status, complaint_id))
+    # Reset citizen verification whenever a report is (re)marked resolved,
+    # so the citizen gets asked again for this latest resolution.
+    if status == "resolved":
+        cur.execute("UPDATE complaints SET status = %s, citizen_verified = NULL WHERE id = %s", (status, complaint_id))
+    else:
+        cur.execute("UPDATE complaints SET status = %s WHERE id = %s", (status, complaint_id))
     conn.commit()
     cur.close()
     conn.close()
@@ -239,3 +244,28 @@ def update_category(complaint_id: int, category: str = Form(...)):
     cur.close()
     conn.close()
     return {"message": "Category updated"}
+
+
+@app.put("/complaints/{complaint_id}/verify")
+def verify_resolution(complaint_id: int, verified: str = Form(...)):
+    """Citizen confirms whether a resolved report was actually fixed.
+    verified: 'true' -> stays resolved, citizen_verified = TRUE
+    verified: 'false' -> reopened (status back to pending), citizen_verified = FALSE
+    """
+    is_verified = verified.lower() == "true"
+    conn = get_connection()
+    cur = conn.cursor()
+    if is_verified:
+        cur.execute(
+            "UPDATE complaints SET citizen_verified = TRUE WHERE id = %s",
+            (complaint_id,),
+        )
+    else:
+        cur.execute(
+            "UPDATE complaints SET citizen_verified = FALSE, status = 'pending' WHERE id = %s",
+            (complaint_id,),
+        )
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"message": "Verification recorded", "verified": is_verified}

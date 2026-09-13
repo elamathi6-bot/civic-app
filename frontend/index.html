@@ -520,6 +520,7 @@
       '<div class="by">Reported by ' + (r.reported_by || 'Unknown') +
       (r.department ? ' &middot; ' + r.department : '') + '</div>' +
       (r.possible_duplicate_of ? '<span class="dup-flag">Possible duplicate of #' + r.possible_duplicate_of + '</span>' : '') +
+      (r.citizen_verified === false ? '<span class="dup-flag" style="color:#DC2626; background:#FEE2E2;">Reopened \u2014 citizen says not fixed</span>' : '') +
       '<div class="bottom-row">' +
       '<span class="status-pill ' + currentStatus + '">' + formatLabel(currentStatus) + '</span>' +
       '<div class="selects">' +
@@ -674,10 +675,48 @@
           '<span class="date">' + date + '</span></div>' +
           '<div class="desc">' + (r.description ? r.description : 'No description added') + '</div>' +
           '<span class="status-pill ' + statusClass + '">' + formatLabel(r.status || 'pending') + '</span>';
+
+        if (statusClass === 'resolved' && r.citizen_verified === null) {
+          const verifyBox = document.createElement('div');
+          verifyBox.style.cssText = 'margin-top:10px; padding:10px 12px; border-radius:12px; background:#F0FDF4; border:1.5px solid #BBF7D0;';
+          verifyBox.innerHTML =
+            '<div style="font-size:12px; font-weight:700; margin-bottom:8px;">Was this actually fixed?</div>' +
+            '<div style="display:flex; gap:8px;">' +
+            '<button class="verify-yes" style="flex:1; border:none; border-radius:8px; padding:7px; background:#0F766E; color:white; font-weight:700; font-size:12px;">Yes, fixed</button>' +
+            '<button class="verify-no" style="flex:1; border:1.5px solid #DC2626; border-radius:8px; padding:7px; background:white; color:#DC2626; font-weight:700; font-size:12px;">Still not fixed</button>' +
+            '</div>';
+          card.appendChild(verifyBox);
+
+          verifyBox.querySelector('.verify-yes').addEventListener('click', () => submitVerification(r.id, true));
+          verifyBox.querySelector('.verify-no').addEventListener('click', () => submitVerification(r.id, false));
+        } else if (r.citizen_verified === true) {
+          const note = document.createElement('div');
+          note.style.cssText = 'margin-top:8px; font-size:11px; color:#0F766E; font-weight:700;';
+          note.textContent = 'You confirmed this was fixed';
+          card.appendChild(note);
+        } else if (r.citizen_verified === false) {
+          const note = document.createElement('div');
+          note.style.cssText = 'margin-top:8px; font-size:11px; color:#DC2626; font-weight:700;';
+          note.textContent = 'You reported this was not actually fixed — reopened';
+          card.appendChild(note);
+        }
+
         panel.appendChild(card);
       });
     } catch (err) {
       panel.innerHTML = '<div class="empty-state">Could not load your reports. Is the backend running?</div>';
+    }
+  }
+
+  async function submitVerification(complaintId, wasFixed) {
+    try {
+      const fd = new FormData();
+      fd.append('verified', wasFixed ? 'true' : 'false');
+      const res = await fetch(API_BASE + '/complaints/' + complaintId + '/verify', { method: 'PUT', body: fd });
+      if (!res.ok) throw new Error('failed');
+      loadMyReports();
+    } catch (err) {
+      alert('Could not record your response. Try again.');
     }
   }
 
