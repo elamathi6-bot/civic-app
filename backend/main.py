@@ -85,6 +85,8 @@ URGENT_KEYWORDS = [
     "blocking", "blocked road", "electrocut", "collapse", "injur",
 ]
 
+PRIORITY_ORDER = {"low": 0, "medium": 1, "high": 2}
+
 
 def calculate_priority(category: str, description: str) -> str:
     """Simple rule-based priority: category baseline, then bumped by keywords."""
@@ -99,6 +101,15 @@ def calculate_priority(category: str, description: str) -> str:
     if category in LOW_RISK_CATEGORIES:
         return "low"
     return "medium"
+
+
+def priority_for_duplicate_count(count: int) -> str:
+    """The more people report the same issue, the higher its minimum priority."""
+    if count >= 4:
+        return "high"
+    if count >= 2:
+        return "medium"
+    return "low"
 
 
 def distance_meters(lat1, lon1, lat2, lon2):
@@ -190,14 +201,15 @@ def submit_complaint(
     dept = cur.fetchone()
     department_id = dept["id"] if dept else None
 
-    # 5. Calculate priority
+    # 5. Calculate baseline priority
     priority = calculate_priority(category, description)
 
     # 6. Check for likely duplicates: same category, still open, nearby, recent
     cur.execute(
         """SELECT id, latitude, longitude FROM complaints
            WHERE category = %s AND status IN ('pending', 'in_progress')
-           AND created_at > NOW() - INTERVAL '7 days'""",
+           AND created_at > NOW() - INTERVAL '7 days'
+           ORDER BY created_at ASC""",
         (category,),
     )
     possible_duplicate_of = None
@@ -218,6 +230,26 @@ def submit_complaint(
          possible_duplicate_of, priority, confidence),
     )
     complaint_id = cur.fetchone()["id"]
+
+    # 8. If this is a duplicate, bump the ORIGINAL report's priority based on how many
+    # people have now reported the same issue (including this new one).
+    if possible_duplicate_of:
+        cur.execute(
+            "SELECT COUNT(*) AS n FROM complaints WHERE possible_duplicate_of = %s",
+            (possible_duplicate_of,),
+        )
+        duplicate_count = cur.fetchone()["n"] + 1  # +1 to include the original report itself
+        bumped_priority = priority_for_duplicate_count(duplicate_count)
+
+        cur.execute("SELECT priority FROM complaints WHERE id = %s", (possible_duplicate_of,))
+        current_original_priority = cur.fetchone()["priority"] or "low"
+
+        if PRIORITY_ORDER[bumped_priority] > PRIORITY_ORDER[current_original_priority]:
+            cur.execute(
+                "UPDATE complaints SET priority = %s WHERE id = %s",
+                (bumped_priority, possible_duplicate_of),
+            )
+
     conn.commit()
     cur.close()
     conn.close()
@@ -241,7 +273,8 @@ def list_complaints(status: str = None, category: str = None):
     query = """SELECT c.id, c.user_id, c.description, c.category, c.status, c.latitude, c.longitude,
                       c.image_path, c.resolved_image_path, c.created_at, c.possible_duplicate_of,
                       c.priority, c.confidence, c.citizen_verified,
-                      u.name AS reported_by, d.name AS department
+                      u.name AS reported_by, d.name AS department,
+                      (SELECT COUNT(*) FROM complaints dup WHERE dup.possible_duplicate_of = c.id) AS duplicate_count
                FROM complaints c
                JOIN users u ON c.user_id = u.id
                LEFT JOIN departments d ON c.department_id = d.id
@@ -299,6 +332,19 @@ def update_category(complaint_id: int, category: str = Form(...)):
     cur.close()
     conn.close()
     return {"message": "Category updated"}
+
+
+@app.put("/complaints/{complaint_id}/priority")
+def update_priority(complaint_id: int, priority: str = Form(...)):
+    if priority not in ("low", "medium", "high"):
+        raise HTTPException(status_code=400, detail="Invalid priority")
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE complaints SET priority = %s WHERE id = %s", (priority, complaint_id))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"message": "Priority updated"}
 
 
 @app.put("/complaints/{complaint_id}/verify")

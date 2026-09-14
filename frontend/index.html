@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Civic Report</title>
@@ -259,6 +261,11 @@
     font-family: inherit; font-size: 11px; font-weight: 700; background: var(--surface); color: var(--muted);
   }
   .admin-card .category-select:focus { outline: none; border-color: var(--teal); }
+  .admin-card .priority-select {
+    border: 1.5px solid var(--border); border-radius: 999px; padding: 5px 10px;
+    font-family: inherit; font-size: 11px; font-weight: 700; background: var(--surface); color: var(--ink);
+  }
+  .admin-card .priority-select:focus { outline: none; border-color: var(--teal); }
   .admin-card .selects { display: flex; gap: 6px; }
   .admin-card .priority-badge {
     font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em;
@@ -320,6 +327,7 @@
         <div class="tabs">
           <div class="tab active" id="tabReport">New Report</div>
           <div class="tab" id="tabHistory">My Reports</div>
+          <div class="tab" id="tabMap">Map</div>
         </div>
 
         <!-- New report form -->
@@ -365,6 +373,16 @@
         <!-- My reports list -->
         <div class="reports-list" id="reportsPanel">
           <div class="empty-state" id="reportsEmpty">Loading your reports...</div>
+        </div>
+
+        <!-- Public map -->
+        <div id="mapPanel" style="display:none; flex-direction:column; flex:1;">
+          <div id="publicMap" style="width:100%; height:420px; border-radius:14px; overflow:hidden; border:1.5px solid var(--border);"></div>
+          <div style="display:flex; gap:10px; margin-top:10px; font-size:11px; color:var(--muted); flex-wrap:wrap;">
+            <span style="color:#DC2626;">● High priority</span>
+            <span style="color:#D97706;">● Medium priority</span>
+            <span style="color:#0F766E;">● Low priority</span>
+          </div>
         </div>
       </div>
 
@@ -521,13 +539,16 @@
     ).join('');
     card.innerHTML =
       '<div class="top"><span class="cat">' + formatLabel(r.category || 'Needs Review') +
-      '<span class="priority-badge ' + (r.priority || 'medium') + '">' + (r.priority || 'medium') + '</span></span>' +
+      '<span class="priority-badge ' + (r.priority || 'medium') + '">' + (r.priority || 'medium') + '</span>' +
+      (r.confidence != null ? '<span style="font-size:10px; color:var(--faint); margin-left:6px;">' + Math.round(r.confidence * 100) + '% confident</span>' : '') +
+      '</span>' +
       '<span class="date">' + date + '</span></div>' +
       (r.image_path ? '<img src="' + photoUrl(r.image_path) + '" style="width:100%; max-height:160px; object-fit:cover; border-radius:10px; margin-bottom:8px;" alt="Reported photo">' : '') +
       '<div class="desc">' + (r.description ? r.description : 'No description added') + '</div>' +
       '<div class="by">Reported by ' + (r.reported_by || 'Unknown') +
       (r.department ? ' &middot; ' + r.department : '') + '</div>' +
       (r.possible_duplicate_of ? '<span class="dup-flag">Possible duplicate of #' + r.possible_duplicate_of + '</span>' : '') +
+      (r.duplicate_count > 0 ? '<span class="dup-flag" style="background:#FEF3C7; color:#92400E;">Reported by ' + (r.duplicate_count + 1) + ' people</span>' : '') +
       (r.citizen_verified === false ? '<span class="dup-flag" style="color:#DC2626; background:#FEE2E2;">Reopened \u2014 citizen says not fixed</span>' : '') +
       (r.resolved_image_path ?
         '<div style="margin-top:8px;"><div style="font-size:11px; font-weight:700; color:var(--faint); margin-bottom:4px;">After photo:</div>' +
@@ -539,6 +560,11 @@
       '<div class="bottom-row">' +
       '<span class="status-pill ' + currentStatus + '">' + formatLabel(currentStatus) + '</span>' +
       '<div class="selects">' +
+      '<select class="priority-select" data-id="' + r.id + '">' +
+      '<option value="low"' + ((r.priority || 'medium') === 'low' ? ' selected' : '') + '>Low</option>' +
+      '<option value="medium"' + ((r.priority || 'medium') === 'medium' ? ' selected' : '') + '>Medium</option>' +
+      '<option value="high"' + ((r.priority || 'medium') === 'high' ? ' selected' : '') + '>High</option>' +
+      '</select>' +
       '<select class="category-select" data-id="' + r.id + '">' + categoryOptionsHtml + '</select>' +
       '<select class="status-select" data-id="' + r.id + '">' +
       '<option value="pending"' + (currentStatus === 'pending' ? ' selected' : '') + '>Pending</option>' +
@@ -563,6 +589,22 @@
         }
       });
     }
+
+    card.querySelector('.priority-select').addEventListener('change', async e => {
+      const newPriority = e.target.value;
+      const id = e.target.dataset.id;
+      e.target.disabled = true;
+      try {
+        const fd = new FormData();
+        fd.append('priority', newPriority);
+        const res = await fetch(API_BASE + '/complaints/' + id + '/priority', { method: 'PUT', body: fd });
+        if (!res.ok) throw new Error('Update failed');
+        loadAdminComplaints();
+      } catch (err) {
+        alert('Could not update priority. Try again.');
+        e.target.disabled = false;
+      }
+    });
 
     card.querySelector('.status-select').addEventListener('change', async e => {
       const newStatus = e.target.value;
@@ -677,13 +719,67 @@
 
   document.getElementById('tabReport').addEventListener('click', () => showTab('report'));
   document.getElementById('tabHistory').addEventListener('click', () => showTab('history'));
+  document.getElementById('tabMap').addEventListener('click', () => showTab('map'));
 
   function showTab(tab) {
     document.getElementById('tabReport').classList.toggle('active', tab === 'report');
     document.getElementById('tabHistory').classList.toggle('active', tab === 'history');
+    document.getElementById('tabMap').classList.toggle('active', tab === 'map');
     document.getElementById('reportPanel').style.display = tab === 'report' ? 'block' : 'none';
     document.getElementById('reportsPanel').style.display = tab === 'history' ? 'flex' : 'none';
+    document.getElementById('mapPanel').style.display = tab === 'map' ? 'flex' : 'none';
     if (tab === 'history') loadMyReports();
+    if (tab === 'map') loadPublicMap();
+  }
+
+  let publicMapInstance = null;
+
+  async function loadPublicMap() {
+    // Initialize the map once; refresh markers on every visit
+    if (!publicMapInstance) {
+      publicMapInstance = L.map('publicMap').setView([12.9716, 80.2205], 11); // default center, will refit to markers
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles &copy; Esri',
+        maxZoom: 19,
+      }).addTo(publicMapInstance);
+      publicMapInstance._markersLayer = L.layerGroup().addTo(publicMapInstance);
+    } else {
+      publicMapInstance._markersLayer.clearLayers();
+      setTimeout(() => publicMapInstance.invalidateSize(), 50);
+    }
+
+    const priorityColors = { high: '#DC2626', medium: '#D97706', low: '#0F766E' };
+
+    try {
+      const res = await fetch(API_BASE + '/complaints');
+      const rows = await res.json();
+      const points = [];
+
+      rows.forEach(r => {
+        if (r.latitude == null || r.longitude == null) return;
+        const color = priorityColors[r.priority] || priorityColors.medium;
+        const marker = L.circleMarker([r.latitude, r.longitude], {
+          radius: 8,
+          color: color,
+          fillColor: color,
+          fillOpacity: 0.85,
+          weight: 2,
+        });
+        marker.bindPopup(
+          '<strong>' + formatLabel(r.category || 'Needs Review') + '</strong><br>' +
+          (r.description || '') + '<br>' +
+          '<span style="text-transform:capitalize;">' + (r.status || 'pending').replace('_', ' ') + '</span>'
+        );
+        marker.addTo(publicMapInstance._markersLayer);
+        points.push([r.latitude, r.longitude]);
+      });
+
+      if (points.length) {
+        publicMapInstance.fitBounds(points, { padding: [30, 30], maxZoom: 15 });
+      }
+    } catch (err) {
+      // Leave the map showing with no markers if the fetch fails
+    }
   }
 
   async function loadMyReports() {
