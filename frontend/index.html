@@ -548,7 +548,7 @@
       '<div class="by">Reported by ' + (r.reported_by || 'Unknown') +
       (r.department ? ' &middot; ' + r.department : '') + '</div>' +
       (r.possible_duplicate_of ? '<span class="dup-flag">Possible duplicate of #' + r.possible_duplicate_of + '</span>' : '') +
-      (r.duplicate_count > 0 ? '<span class="dup-flag" style="background:#FEF3C7; color:#92400E;">Reported by ' + (r.duplicate_count + 1) + ' people</span>' : '') +
+      ((r.duplicate_count + r.upvote_count) > 0 ? '<span class="dup-flag" style="background:#FEF3C7; color:#92400E;">\ud83d\udc4d ' + (r.duplicate_count + r.upvote_count + 1) + ' people support this</span>' : '') +
       (r.citizen_verified === false ? '<span class="dup-flag" style="color:#DC2626; background:#FEE2E2;">Reopened \u2014 citizen says not fixed</span>' : '') +
       (r.resolved_image_path ?
         '<div style="margin-top:8px;"><div style="font-size:11px; font-weight:700; color:var(--faint); margin-bottom:4px;">After photo:</div>' +
@@ -920,18 +920,106 @@
       return showReportError('Longitude must be between -180 and 180.');
     }
 
+    const description = document.getElementById('description').value || '';
+
     const fd = new FormData();
-    fd.append('user_id', currentUser.id);
-    fd.append('description', document.getElementById('description').value || '');
+    fd.append('description', description);
     fd.append('latitude', lat);
     fd.append('longitude', lng);
     fd.append('photo', photo);
 
     submitBtn.disabled = true;
-    submitBtn.textContent = 'Submitting...';
+    submitBtn.textContent = 'Checking...';
 
     try {
-      const res = await fetch(API_BASE + '/complaints', { method: 'POST', body: fd });
+      const res = await fetch(API_BASE + '/complaints/precheck', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Server error while checking.');
+
+      pendingSubmission = {
+        description, latitude: latNum, longitude: lngNum,
+        category: data.detected_category, confidence: data.confidence,
+        priority: data.priority, image_reference: data.image_reference,
+      };
+
+      if (data.match) {
+        showDuplicateChoice(data.match);
+      } else {
+        await confirmSubmission(null);
+      }
+    } catch (err) {
+      if (err instanceof TypeError) {
+        showReportError('Can\'t reach the server. Make sure the backend is running.');
+      } else {
+        showReportError(err.message || 'Server error while checking.');
+      }
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Submit Report';
+    }
+  });
+
+  let pendingSubmission = null;
+
+  function showDuplicateChoice(match) {
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Submit Report';
+
+    const existing = document.getElementById('duplicateChoice');
+    if (existing) existing.remove();
+
+    const box = document.createElement('div');
+    box.id = 'duplicateChoice';
+    box.style.cssText = 'margin-top:14px; padding:14px; border-radius:14px; background:#FFFBEB; border:1.5px solid #FDE68A;';
+    box.innerHTML =
+      '<div style="font-weight:800; font-size:13px; margin-bottom:6px;">\u26a0\ufe0f Similar complaint found nearby</div>' +
+      '<div style="font-size:12.5px; color:var(--muted); margin-bottom:6px;">' +
+      formatLabel(match.category) + ' \u2014 ' + match.distance_meters + 'm away' +
+      (match.description ? '<br>"' + match.description + '"' : '') + '</div>' +
+      '<div style="font-size:12px; font-weight:700; color:#92400E; margin-bottom:10px;">\ud83d\udc4d ' + match.support_count + ' ' + (match.support_count === 1 ? 'person supports' : 'people support') + ' this complaint</div>' +
+      '<button id="upvoteExistingBtn" style="width:100%; border:none; border-radius:10px; padding:10px; background:var(--ink); color:white; font-family:inherit; font-weight:700; font-size:12.5px; margin-bottom:8px;">Upvote Existing Complaint</button>' +
+      '<button id="reportSeparatelyBtn" style="width:100%; border:1.5px solid var(--border); border-radius:10px; padding:10px; background:white; color:var(--ink); font-family:inherit; font-weight:700; font-size:12.5px;">Report Separately</button>';
+
+    reportForm.appendChild(box);
+
+    document.getElementById('upvoteExistingBtn').addEventListener('click', async () => {
+      box.querySelectorAll('button').forEach(b => b.disabled = true);
+      try {
+        const fd = new FormData();
+        fd.append('user_id', currentUser.id);
+        const res = await fetch(API_BASE + '/complaints/' + match.id + '/upvote', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Could not upvote.');
+        box.remove();
+        showSuccess({ detected_category: match.category, complaint_id: match.id, upvoted: true, support_count: data.support_count });
+      } catch (err) {
+        alert(err.message || 'Could not upvote. Try again.');
+        box.querySelectorAll('button').forEach(b => b.disabled = false);
+      }
+    });
+
+    document.getElementById('reportSeparatelyBtn').addEventListener('click', async () => {
+      box.remove();
+      await confirmSubmission(match.id);
+    });
+  }
+
+  async function confirmSubmission(possibleDuplicateOf) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Submitting...';
+
+    const fd = new FormData();
+    fd.append('user_id', currentUser.id);
+    fd.append('description', pendingSubmission.description);
+    fd.append('latitude', pendingSubmission.latitude);
+    fd.append('longitude', pendingSubmission.longitude);
+    fd.append('category', pendingSubmission.category);
+    fd.append('confidence', pendingSubmission.confidence);
+    fd.append('priority', pendingSubmission.priority);
+    fd.append('image_reference', pendingSubmission.image_reference);
+    if (possibleDuplicateOf) fd.append('possible_duplicate_of', possibleDuplicateOf);
+
+    try {
+      const res = await fetch(API_BASE + '/complaints/confirm', { method: 'POST', body: fd });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Server error while submitting.');
       showSuccess(data);
@@ -945,7 +1033,7 @@
       submitBtn.disabled = false;
       submitBtn.textContent = 'Submit Report';
     }
-  });
+  }
 
   function showReportError(msg) {
     reportError.textContent = msg;
@@ -953,6 +1041,15 @@
   }
 
   function showSuccess(data) {
+    if (data.upvoted) {
+      document.getElementById('resultCategory').textContent = 'Upvoted';
+      document.getElementById('resultMeta').innerHTML = 'Report #' + data.complaint_id + ' &middot; ' + data.support_count + ' people now support this';
+      document.getElementById('appState').style.display = 'none';
+      document.getElementById('successState').style.display = 'block';
+      const existing = document.getElementById('confidenceCheck');
+      if (existing) existing.remove();
+      return;
+    }
     document.getElementById('resultCategory').textContent = formatLabel(data.detected_category || 'Logged for review');
     let meta = 'Report #' + data.complaint_id;
     if (data.possible_duplicate_of) {

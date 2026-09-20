@@ -87,6 +87,10 @@ URGENT_KEYWORDS = [
 
 PRIORITY_ORDER = {"low": 0, "medium": 1, "high": 2}
 
+# How close (meters) and how recent (days) a report must be to count as "the same issue"
+DUPLICATE_RADIUS_METERS = 50
+DUPLICATE_WINDOW_DAYS = 7
+
 
 def calculate_priority(category: str, description: str) -> str:
     """Simple rule-based priority: category baseline, then bumped by keywords."""
@@ -103,8 +107,8 @@ def calculate_priority(category: str, description: str) -> str:
     return "medium"
 
 
-def priority_for_duplicate_count(count: int) -> str:
-    """The more people report the same issue, the higher its minimum priority."""
+def priority_for_support_count(count: int) -> str:
+    """The more people support (report or upvote) the same issue, the higher its minimum priority."""
     if count >= 4:
         return "high"
     if count >= 2:
@@ -119,6 +123,44 @@ def distance_meters(lat1, lon1, lat2, lon2):
     dlon = lon2 - lon1
     a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
     return 6371000 * 2 * asin(sqrt(a))
+
+
+def find_matching_complaint(cur, category, latitude, longitude):
+    """Find the closest open complaint of the same category within the duplicate radius,
+    using GPS distance + category only (image/description similarity is future work)."""
+    cur.execute(
+        f"""SELECT id, latitude, longitude, description FROM complaints
+           WHERE category = %s AND status IN ('pending', 'in_progress')
+           AND created_at > NOW() - INTERVAL '{DUPLICATE_WINDOW_DAYS} days'
+           ORDER BY created_at ASC""",
+        (category,),
+    )
+    for row in cur.fetchall():
+        dist = distance_meters(latitude, longitude, row["latitude"], row["longitude"])
+        if dist <= DUPLICATE_RADIUS_METERS:
+            return row["id"], round(dist), row["description"]
+    return None, None, None
+
+
+def get_support_count(cur, complaint_id):
+    """Total people behind a report: the original reporter, everyone whose separate
+    report got linked as a duplicate, and everyone who tapped 'upvote'."""
+    cur.execute("SELECT COUNT(*) AS n FROM complaints WHERE possible_duplicate_of = %s", (complaint_id,))
+    duplicate_count = cur.fetchone()["n"]
+    cur.execute("SELECT COUNT(*) AS n FROM upvotes WHERE complaint_id = %s", (complaint_id,))
+    upvote_count = cur.fetchone()["n"]
+    return 1 + duplicate_count + upvote_count, duplicate_count, upvote_count
+
+
+def bump_priority_if_needed(cur, complaint_id):
+    total, _, _ = get_support_count(cur, complaint_id)
+    bumped = priority_for_support_count(total)
+    cur.execute("SELECT priority FROM complaints WHERE id = %s", (complaint_id,))
+    row = cur.fetchone()
+    current = row["priority"] if row and row["priority"] else "low"
+    if PRIORITY_ORDER[bumped] > PRIORITY_ORDER[current]:
+        cur.execute("UPDATE complaints SET priority = %s WHERE id = %s", (bumped, complaint_id))
+    return total
 
 
 @app.get("/")
@@ -168,58 +210,80 @@ def login(email: str = Form(...), password: str = Form(...)):
     }
 
 
-# ---------- COMPLAINTS ----------
+# ---------- COMPLAINTS: two-step submission ----------
 
-@app.post("/complaints")
-def submit_complaint(
-    user_id: int = Form(...),
+@app.post("/complaints/precheck")
+def precheck_complaint(
     description: str = Form(""),
     latitude: float = Form(...),
     longitude: float = Form(...),
     photo: UploadFile = File(...),
 ):
-    # 1. Save the uploaded photo to a temp file first (YOLO needs a local path to read)
+    """Step 1: run AI detection, upload the photo, and check for a nearby matching
+    complaint. Nothing is saved to the complaints table yet."""
     suffix = os.path.splitext(photo.filename or "")[1] or ".jpg"
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, dir=UPLOAD_DIR) as tmp:
         shutil.copyfileobj(photo.file, tmp)
         tmp_path = tmp.name
 
-    # 2. Run AI detection on it
     result = detect_issue(tmp_path)
     category = result["category"]
     confidence = result.get("confidence", 0.0)
 
-    # 3. Store the photo permanently (Cloudinary URL, or local filename) and clean up the temp file
     image_reference = store_photo_from_path(tmp_path)
     if os.path.exists(tmp_path):
         os.remove(tmp_path)
 
-    # 4. Match category to a department
+    priority = calculate_priority(category, description)
+
     conn = get_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    match_id, match_distance, match_description = find_matching_complaint(cur, category, latitude, longitude)
+
+    match_info = None
+    if match_id:
+        total, _, _ = get_support_count(cur, match_id)
+        match_info = {
+            "id": match_id,
+            "category": category,
+            "description": match_description,
+            "distance_meters": match_distance,
+            "support_count": total,
+        }
+
+    cur.close()
+    conn.close()
+
+    return {
+        "detected_category": category,
+        "confidence": confidence,
+        "priority": priority,
+        "image_reference": image_reference,
+        "match": match_info,
+    }
+
+
+@app.post("/complaints/confirm")
+def confirm_complaint(
+    user_id: int = Form(...),
+    description: str = Form(""),
+    latitude: float = Form(...),
+    longitude: float = Form(...),
+    category: str = Form(...),
+    confidence: float = Form(0.0),
+    priority: str = Form("medium"),
+    image_reference: str = Form(...),
+    possible_duplicate_of: int = Form(None),
+):
+    """Step 2: citizen chose 'Report separately' (or there was no match at all).
+    Actually saves the complaint, using the photo already uploaded during precheck."""
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
     cur.execute("SELECT id FROM departments WHERE category = %s", (category,))
     dept = cur.fetchone()
     department_id = dept["id"] if dept else None
 
-    # 5. Calculate baseline priority
-    priority = calculate_priority(category, description)
-
-    # 6. Check for likely duplicates: same category, still open, nearby, recent
-    cur.execute(
-        """SELECT id, latitude, longitude FROM complaints
-           WHERE category = %s AND status IN ('pending', 'in_progress')
-           AND created_at > NOW() - INTERVAL '7 days'
-           ORDER BY created_at ASC""",
-        (category,),
-    )
-    possible_duplicate_of = None
-    for row in cur.fetchall():
-        dist = distance_meters(latitude, longitude, row["latitude"], row["longitude"])
-        if dist <= 50:
-            possible_duplicate_of = row["id"]
-            break
-
-    # 7. Save complaint to database
     cur.execute(
         """INSERT INTO complaints
            (user_id, department_id, category, description, image_path, latitude, longitude,
@@ -231,24 +295,8 @@ def submit_complaint(
     )
     complaint_id = cur.fetchone()["id"]
 
-    # 8. If this is a duplicate, bump the ORIGINAL report's priority based on how many
-    # people have now reported the same issue (including this new one).
     if possible_duplicate_of:
-        cur.execute(
-            "SELECT COUNT(*) AS n FROM complaints WHERE possible_duplicate_of = %s",
-            (possible_duplicate_of,),
-        )
-        duplicate_count = cur.fetchone()["n"] + 1  # +1 to include the original report itself
-        bumped_priority = priority_for_duplicate_count(duplicate_count)
-
-        cur.execute("SELECT priority FROM complaints WHERE id = %s", (possible_duplicate_of,))
-        current_original_priority = cur.fetchone()["priority"] or "low"
-
-        if PRIORITY_ORDER[bumped_priority] > PRIORITY_ORDER[current_original_priority]:
-            cur.execute(
-                "UPDATE complaints SET priority = %s WHERE id = %s",
-                (bumped_priority, possible_duplicate_of),
-            )
+        bump_priority_if_needed(cur, possible_duplicate_of)
 
     conn.commit()
     cur.close()
@@ -258,11 +306,40 @@ def submit_complaint(
         "message": "Complaint submitted",
         "complaint_id": complaint_id,
         "detected_category": category,
-        "ai_mode": result.get("mode"),
         "possible_duplicate_of": possible_duplicate_of,
         "confidence": confidence,
         "priority": priority,
     }
+
+
+@app.post("/complaints/{complaint_id}/upvote")
+def upvote_complaint(complaint_id: int, user_id: int = Form(...)):
+    """Citizen taps 'I have this too' instead of filing a separate report."""
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    cur.execute("SELECT id FROM complaints WHERE id = %s", (complaint_id,))
+    if not cur.fetchone():
+        cur.close()
+        conn.close()
+        raise HTTPException(status_code=404, detail="Complaint not found")
+
+    try:
+        cur.execute(
+            "INSERT INTO upvotes (complaint_id, user_id) VALUES (%s, %s)",
+            (complaint_id, user_id),
+        )
+    except Exception:
+        conn.rollback()
+        cur.close()
+        conn.close()
+        raise HTTPException(status_code=400, detail="You already upvoted this complaint")
+
+    total = bump_priority_if_needed(cur, complaint_id)
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"message": "Upvoted", "support_count": total}
 
 
 @app.get("/complaints")
@@ -274,7 +351,8 @@ def list_complaints(status: str = None, category: str = None):
                       c.image_path, c.resolved_image_path, c.created_at, c.possible_duplicate_of,
                       c.priority, c.confidence, c.citizen_verified,
                       u.name AS reported_by, d.name AS department,
-                      (SELECT COUNT(*) FROM complaints dup WHERE dup.possible_duplicate_of = c.id) AS duplicate_count
+                      (SELECT COUNT(*) FROM complaints dup WHERE dup.possible_duplicate_of = c.id) AS duplicate_count,
+                      (SELECT COUNT(*) FROM upvotes up WHERE up.complaint_id = c.id) AS upvote_count
                FROM complaints c
                JOIN users u ON c.user_id = u.id
                LEFT JOIN departments d ON c.department_id = d.id
@@ -303,8 +381,6 @@ def update_status(complaint_id: int, status: str = Form(...)):
         raise HTTPException(status_code=400, detail="Invalid status")
     conn = get_connection()
     cur = conn.cursor()
-    # Reset citizen verification whenever a report is (re)marked resolved,
-    # so the citizen gets asked again for this latest resolution.
     if status == "resolved":
         cur.execute("UPDATE complaints SET status = %s, citizen_verified = NULL WHERE id = %s", (status, complaint_id))
     else:
@@ -349,18 +425,11 @@ def update_priority(complaint_id: int, priority: str = Form(...)):
 
 @app.put("/complaints/{complaint_id}/verify")
 def verify_resolution(complaint_id: int, verified: str = Form(...)):
-    """Citizen confirms whether a resolved report was actually fixed.
-    verified: 'true' -> stays resolved, citizen_verified = TRUE
-    verified: 'false' -> reopened (status back to pending), citizen_verified = FALSE
-    """
     is_verified = verified.lower() == "true"
     conn = get_connection()
     cur = conn.cursor()
     if is_verified:
-        cur.execute(
-            "UPDATE complaints SET citizen_verified = TRUE WHERE id = %s",
-            (complaint_id,),
-        )
+        cur.execute("UPDATE complaints SET citizen_verified = TRUE WHERE id = %s", (complaint_id,))
     else:
         cur.execute(
             "UPDATE complaints SET citizen_verified = FALSE, status = 'pending' WHERE id = %s",
@@ -374,7 +443,6 @@ def verify_resolution(complaint_id: int, verified: str = Form(...)):
 
 @app.put("/complaints/{complaint_id}/resolve-photo")
 def upload_resolve_photo(complaint_id: int, photo: UploadFile = File(...)):
-    """Admin uploads an 'after' photo showing the issue was fixed."""
     image_reference = store_photo_from_upload(photo, prefix="resolved_")
 
     conn = get_connection()
